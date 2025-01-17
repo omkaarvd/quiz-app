@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,18 +16,18 @@ export default function LoginPage() {
     e.preventDefault();
 
     try {
-      const result = await signIn("credentials", {
-        email,
-        password,
-        redirect: false,
-      });
+      // const result = await signIn("credentials", {
+      //   email,
+      //   password,
+      //   redirect: false,
+      // });
 
-      if (result?.error) {
-        toast.error("Invalid credentials");
-      } else {
-        router.push("/dashboard");
-        router.refresh();
-      }
+      // if (result?.error) {
+      //   toast.error("Invalid credentials");
+      // } else {
+      //   router.push("/dashboard");
+      //   router.refresh();
+      // }
     } catch (error) {
       toast.error("An error occurred");
     }

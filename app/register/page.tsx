@@ -17,25 +17,25 @@ export default function RegisterPage() {
     e.preventDefault();
 
     try {
-      const res = await fetch("/api/register", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          name,
-          email,
-          password,
-        }),
-      });
+      // const res = await fetch("/api/register", {
+      //   method: "POST",
+      //   headers: {
+      //     "Content-Type": "application/json",
+      //   },
+      //   body: JSON.stringify({
+      //     name,
+      //     email,
+      //     password,
+      //   }),
+      // });
 
-      if (res.ok) {
-        router.push("/login");
-        toast.success("Registration successful! Please sign in.");
-      } else {
-        const data = await res.json();
-        toast.error(data.message || "Registration failed");
-      }
+      // if (res.ok) {
+      //   router.push("/login");
+      //   toast.success("Registration successful! Please sign in.");
+      // } else {
+      //   const data = await res.json();
+      //   toast.error(data.message || "Registration failed");
+      // }
     } catch (error) {
       toast.error("An error occurred");
     }
