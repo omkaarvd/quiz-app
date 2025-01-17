@@ -8,7 +8,7 @@ export default function Home() {
     <div className="min-h-screen bg-gradient-to-b from-background to-secondary">
       <div className="container mx-auto px-4 py-16">
         <div className="text-center mb-16">
-          <h1 className="text-4xl font-bold mb-4">Welcome to QuizMaster</h1>
+          <h1 className="text-4xl font-bold mb-4">Welcome to Quiz Master</h1>
           <p className="text-xl text-muted-foreground">
             Challenge your friends in real-time multiplayer quizzes!
           </p>
