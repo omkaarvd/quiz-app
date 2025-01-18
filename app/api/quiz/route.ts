@@ -1,5 +1,8 @@
+import dbConnect from "@/lib/db-connect";
+import { Question, Quiz } from "@/models/quiz";
+import { IQuestion, IQuiz } from "@/types/quiz";
+import { Types } from "mongoose";
 import { NextResponse } from "next/server";
-import prisma from "@/lib/prisma";
 import { z } from "zod";
 
 const generateRoomCode = () => {
@@ -28,52 +31,85 @@ const quizSchema = z.object({
 });
 
 export async function POST(req: Request) {
+  await dbConnect();
+
   try {
-    const body = await req.json();
+    if (!req.body) {
+      return NextResponse.json(
+        { message: "Request body is required" },
+        { status: 400 }
+      );
+    }
+
+    let body;
+    try {
+      body = await req.json();
+    } catch (error) {
+      return NextResponse.json(
+        { message: "Invalid JSON in request body" },
+        { status: 400 }
+      );
+    }
+
     const validation = quizSchema.safeParse(body);
 
     if (!validation.success) {
       return NextResponse.json(
-        { message: "Invalid input data" },
+        {
+          message: "Invalid input data",
+          errors: validation.error.errors,
+        },
         { status: 400 }
       );
     }
 
     const { title, description, timeLimit, questions } = validation.data;
 
-    let roomCode;
+    let roomCode = generateRoomCode();
     let isUnique = false;
+
     while (!isUnique) {
-      roomCode = generateRoomCode();
-      const existingQuiz = await prisma.quiz.findUnique({
-        where: { roomCode },
-      });
+      const existingQuiz = await Quiz.findOne({ roomCode });
       if (!existingQuiz) {
         isUnique = true;
+      } else {
+        roomCode = generateRoomCode();
       }
     }
 
-    const quiz = await prisma.quiz.create({
-      data: {
-        title,
-        description,
-        timeLimit,
-        roomCode: roomCode!,
-        creatorId: "session.user.id",
-        questions: {
-          create: questions.map((q) => ({
-            text: q.text,
-            type: q.type,
-            options: q.options,
-            correctAnswer: q.correctAnswer,
-            points: q.points,
-            order: q.order,
-          })),
-        },
-      },
-    });
+    const quiz = new Quiz({
+      title,
+      description,
+      timeLimit,
+      roomCode,
+      questions: [],
+    }) as IQuiz;
 
-    return NextResponse.json(quiz, { status: 201 });
+    // Save quiz first
+    await quiz.save();
+
+    const questionDocs = (await Question.create(
+      questions.map((q) => ({
+        quiz: quiz._id,
+        text: q.text,
+        type: q.type,
+        options: q.options,
+        correctAnswer: q.correctAnswer,
+        points: q.points,
+        order: q.order,
+      }))
+    )) as IQuestion[];
+
+    quiz.questions = questionDocs.map((q) => q._id as Types.ObjectId);
+    await quiz.save();
+
+    return NextResponse.json(
+      {
+        ...quiz.toObject(),
+        questions: questionDocs,
+      },
+      { status: 201 }
+    );
   } catch (error) {
     console.error("Quiz creation error:", error);
     return NextResponse.json(
