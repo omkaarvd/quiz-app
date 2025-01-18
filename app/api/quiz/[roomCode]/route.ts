@@ -1,84 +1,140 @@
-// import { NextResponse } from "next/server";
-// import prisma from "@/lib/prisma";
-// import { z } from "zod";
+import { NextResponse } from "next/server";
+import dbConnect from "@/lib/db-connect";
+import { Quiz, QuizParticipant, User } from "@/models/quiz";
+import { z } from "zod";
 
-// const generateRoomCode = () => {
-//   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-//   let code = "";
-//   for (let i = 0; i < 6; i++) {
-//     code += chars.charAt(Math.floor(Math.random() * chars.length));
-//   }
-//   return code;
-// };
+const participantSchema = z.object({
+  name: z.string().min(1),
+  email: z.string().email(),
+});
 
-// const quizSchema = z.object({
-//   title: z.string().min(1),
-//   description: z.string().optional(),
-//   timeLimit: z.number().min(10).max(300),
-//   questions: z.array(
-//     z.object({
-//       text: z.string().min(1),
-//       type: z.enum(["MCQ", "TRUE_FALSE"]),
-//       options: z.array(z.string()),
-//       correctAnswer: z.string(),
-//       points: z.number().min(1).max(100),
-//       order: z.number(),
-//     })
-//   ),
-// });
+export async function GET(
+  req: Request,
+  { params }: { params: Promise<{ roomCode: string }> }
+) {
+  await dbConnect();
 
-// export async function POST(req: Request) {
-//   try {
-//     const body = await req.json();
-//     const validation = quizSchema.safeParse(body);
+  try {
+    const { roomCode } = await params;
+    const { searchParams } = new URL(req.url);
+    const questionIndex = parseInt(searchParams.get("index") || "0");
 
-//     if (!validation.success) {
-//       return NextResponse.json(
-//         { message: "Invalid input data" },
-//         { status: 400 }
-//       );
-//     }
+    // Find the quiz and populate the questions
+    const quiz = await Quiz.findOne({ roomCode, isActive: true }).populate({
+      path: "questions",
+      options: { sort: { order: 1 } },
+      select: "-correctAnswer", // Exclude correct answer from response
+    });
 
-//     const { title, description, timeLimit, questions } = validation.data;
+    if (!quiz) {
+      return NextResponse.json(
+        { message: "Quiz not found or inactive" },
+        { status: 404 }
+      );
+    }
 
-//     let roomCode;
-//     let isUnique = false;
-//     while (!isUnique) {
-//       roomCode = generateRoomCode();
-//       const existingQuiz = await prisma.quiz.findUnique({
-//         where: { roomCode },
-//       });
-//       if (!existingQuiz) {
-//         isUnique = true;
-//       }
-//     }
+    // Check if questionIndex is valid
+    if (questionIndex < 0 || questionIndex >= quiz.questions.length) {
+      return NextResponse.json(
+        { message: "Invalid question index" },
+        { status: 400 }
+      );
+    }
 
-//     const quiz = await prisma.quiz.create({
-//       data: {
-//         title,
-//         description,
-//         timeLimit,
-//         roomCode: roomCode!,
-//         creatorId: "session.user.id",
-//         questions: {
-//           create: questions.map((q) => ({
-//             text: q.text,
-//             type: q.type,
-//             options: q.options,
-//             correctAnswer: q.correctAnswer,
-//             points: q.points,
-//             order: q.order,
-//           })),
-//         },
-//       },
-//     });
+    const currentQuestion = quiz.questions[questionIndex];
+    const totalQuestions = quiz.questions.length;
+    const isLastQuestion = questionIndex === totalQuestions - 1;
 
-//     return NextResponse.json(quiz, { status: 201 });
-//   } catch (error) {
-//     console.error("Quiz creation error:", error);
-//     return NextResponse.json(
-//       { message: "Internal server error" },
-//       { status: 500 }
-//     );
-//   }
-// }
+    return NextResponse.json({
+      question: {
+        id: currentQuestion._id,
+        text: currentQuestion.text,
+        type: currentQuestion.type,
+        options: currentQuestion.options,
+        points: currentQuestion.points,
+        timeLimit: quiz.timeLimit,
+      },
+      metadata: {
+        currentIndex: questionIndex,
+        totalQuestions,
+        isLastQuestion,
+        quizTitle: quiz.title,
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching question:", error);
+    return NextResponse.json(
+      { message: "Internal server error" },
+      { status: 500 }
+    );
+  }
+}
+
+export async function POST(
+  req: Request,
+  { params }: { params: { roomCode: string } }
+) {
+  await dbConnect();
+
+  try {
+    const { roomCode } = params;
+    const body = await req.json();
+
+    const validation = participantSchema.safeParse(body);
+    if (!validation.success) {
+      return NextResponse.json(
+        { message: "Invalid participant data" },
+        { status: 400 }
+      );
+    }
+
+    const { name, email } = validation.data;
+
+    // Find or create user
+    let user = await User.findOne({ email });
+    if (!user) {
+      user = await User.create({
+        name,
+        email,
+        password: crypto.randomUUID(), // temporary password for guest users
+      });
+    }
+
+    const quiz = await Quiz.findOne({ roomCode, isActive: true });
+    if (!quiz) {
+      return NextResponse.json(
+        { message: "Quiz not found or inactive" },
+        { status: 404 }
+      );
+    }
+
+    // Check if participant already exists
+    const existingParticipant = await QuizParticipant.findOne({
+      quiz: quiz._id,
+      user: user._id,
+    });
+
+    if (existingParticipant) {
+      return NextResponse.json(
+        { message: "Already joined quiz", participant: existingParticipant },
+        { status: 200 }
+      );
+    }
+
+    // Create new participant
+    const participant = await QuizParticipant.create({
+      quiz: quiz._id,
+      user: user._id,
+      score: 0,
+      joinedAt: new Date(),
+    });
+
+    return NextResponse.json({ participant }, { status: 201 });
+  } catch (error) {
+    console.error("Participant registration error:", error);
+    return NextResponse.json(
+      { message: "Internal server error" },
+      { status: 500 }
+    );
+  }
+}
